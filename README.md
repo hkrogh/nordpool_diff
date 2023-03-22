@@ -15,19 +15,20 @@ suitable for controlling things that require N contiguous hours to work, such as
 no guarantees about how many hours per day the output will stay above some threshold, even if typical price variations
 may make the output typically behave this or that way most of the time.
 
-## ENTSO-E vs. Nord Pool
+## ENTSO-E vs. Nord Pool vs Energidataservice
 
 This component was initially (in 2021) created to support https://github.com/custom-components/nordpool, hence the name.
 But after that (in 2022) https://github.com/JaccoR/hass-entso-e became available. Besides being 100 % legal to use[^1],
 ENTSO-E also covers wider range of markets than Nord Pool.
-Furthermore it is possible to use https://github.com/MTrab/energidataservice which supports forecast prices for some markets, in case actual prices are not available for the full filter length.
+Furthermore in 2023 Energidataservice was supported https://github.com/MTrab/energidataservice. This service uses https://www.energidataservice.dk/, which are gets data from (https://www.energidataservice.dk/) which are 100% free to use. It has automatical fallback to Nordpool for markets not supporter by energidataservice.dk. Futhermore it supports forecast prices for some markets, in case actual prices are not available for the full filter length.
 
 Since v0.2.0 hass-entso-e is preferred and default, but nordpool still works, and can also be used as an automatic fallback
 mechanism to complement hass-entso-e when ENTSO-E API is down. The logic is as follows:
 1. Look up prices from hass-entso-e, if exists.
-2a. Look up prices from energidataservice, if exists.
-2b. If less than N upcoming hours available, Look up prices from carnot forecast, if exists.
-3. If less than N upcoming hours available, then look up prices from nordpool too, if exists.
+2. If less than N upcoming hours available, Look up prices from energidataservice, if exists.
+3. If less than N upcoming hours available, Look up prices from carnot forecast, if exists.
+4. If less than N upcoming hours available, then look up prices from nordpool too, if exists.
+5. If less than N upcoming hours available, fill with last element (last price).
 
 ## Installation
 
