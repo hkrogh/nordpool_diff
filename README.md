@@ -1,6 +1,6 @@
 # nordpool_diff custom component for Home Assistant
 
-Electricity spot prices can be fetched from [ENTSO-E](https://transparency.entsoe.eu/) and [Nord Pool](https://www.nordpoolgroup.com/)
+Electricity spot prices can be fetched from [ENTSO-E](https://transparency.entsoe.eu/), Energy Data Service https://github.com/MTrab/energidataservice and [Nord Pool](https://www.nordpoolgroup.com/)
 into Home Assistant, but making good use of those prices is not easy.
 This component provides various algorithms whose output can be used for deciding when to turn water heater or
 car charger on/off, or for adjusting target temperature of a heater so that it will heat more just before prices
@@ -20,17 +20,19 @@ may make the output typically behave this or that way most of the time.
 This component was initially (in 2021) created to support https://github.com/custom-components/nordpool, hence the name.
 But after that (in 2022) https://github.com/JaccoR/hass-entso-e became available. Besides being 100 % legal to use[^1],
 ENTSO-E also covers wider range of markets than Nord Pool.
+Furthermore it is possible to use https://github.com/MTrab/energidataservice which supports forecast prices for some markets, in case actual prices are not available for the full filter length.
 
 Since v0.2.0 hass-entso-e is preferred and default, but nordpool still works, and can also be used as an automatic fallback
 mechanism to complement hass-entso-e when ENTSO-E API is down. The logic is as follows:
 1. Look up prices from hass-entso-e, if exists.
-2. If less than N upcoming hours available, then look up prices from nordpool too, if exists.
-3. Use whichever (hass-entso-e or nordpool) provided more upcoming hours.
+2a. Look up prices from energidataservice, if exists.
+2b. If less than N upcoming hours available, Look up prices from carnot forecast, if exists.
+3. If less than N upcoming hours available, then look up prices from nordpool too, if exists.
 
 ## Installation
 
-1. Install `hass-entso-e` (https://github.com/JaccoR/hass-entso-e). When configuring it, you can leave "Name" blank.
-2. Optionally: Install `nordpool` (https://github.com/custom-components/nordpool). You can also use just `nordpool` and not `hass-entso-e`, if you want to.
+1. Install `hass-entso-e` (https://github.com/JaccoR/hass-entso-e). When configuring it, you can leave "Name" blank or install 'energidataservice' (https://github.com/MTrab/energidataservice). Note energidataservice has automatically fallback to nordpool.
+2. Optionally: Install `nordpool` (https://github.com/custom-components/nordpool) together with hass-entso-e. You can also use just `nordpool` and not `hass-entso-e` or 'energidataservice', if you want to.
 3. Install `nordpool_diff`, either using HACS or manually
      1. HACS
          1. Go to HACS -> Integrations
@@ -68,6 +70,14 @@ By default, Nordpool will not be used as a source for price information. If you 
  sensor:
    - platform: nordpool_diff
      nordpool_entity: sensor.nordpool_kwh_fi_eur_3_095_024
+ ```
+
+### Energidataservice entity
+By default, Energidataservice will not be used as a source for price information. If you want to use Energidataservice, you must specify the entity ID, for example:
+ ```yaml
+ sensor:
+   - platform: nordpool_diff
+     nordpool_entity: sensor.energidataservice
  ```
 
 ### Unit
