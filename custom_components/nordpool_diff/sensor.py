@@ -16,6 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 NORDPOOL_ENTITY = "nordpool_entity"
 ENTSOE_ENTITY = "entsoe_entity"
+EDS_ENTITY = "eds_entity"
 FILTER_LENGTH = "filter_length"
 FILTER_TYPE = "filter_type"
 RECTANGLE = "rectangle"
@@ -34,6 +35,7 @@ UNIT = "unit"
 # https://github.com/home-assistant/core/blob/dev/homeassistant/helpers/config_validation.py
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(NORDPOOL_ENTITY, default=""): cv.string,  # Is there a way to require EITHER nordpool OR entsoe being valid cv.entity_id?
+    vol.Optional(EDS_ENTITY, default=""): cv.string,  # Is there a way to require EITHER nordpool OR entsoe being valid cv.entity_id?
     vol.Optional(ENTSOE_ENTITY, default="sensor.average_electricity_price_today"): cv.string,  # hass-entso-e's default entity id
     vol.Optional(FILTER_LENGTH, default=10): vol.All(vol.Coerce(int), vol.Range(min=2, max=20)),
     vol.Optional(FILTER_TYPE, default=TRIANGLE): vol.In([RECTANGLE, TRIANGLE, INTERVAL, RANK]),
@@ -49,13 +51,14 @@ def setup_platform(
         discovery_info: DiscoveryInfoType | None = None
 ) -> None:
     nordpool_entity_id = config[NORDPOOL_ENTITY]
+    eds_entity_id = config[EDS_ENTITY]
     entsoe_entity_id = config[ENTSOE_ENTITY]
     filter_length = config[FILTER_LENGTH]
     filter_type = config[FILTER_TYPE]
     normalize = config[NORMALIZE]
     unit = config[UNIT]
 
-    add_entities([NordpoolDiffSensor(nordpool_entity_id, entsoe_entity_id, filter_length, filter_type, normalize, unit)])
+    add_entities([NordpoolDiffSensor(nordpool_entity_id, eds_entity_id, entsoe_entity_id, filter_length, filter_type, normalize, unit)])
 
 def _with_interval(prices):
     p_min = min(prices)
@@ -81,6 +84,25 @@ def _get_next_n_hours_from_nordpool(n, np):
     prices = [x for x in prices if x is not None]
     return prices[hour: hour + n]
 
+def _get_next_n_hours_from_eds(n, eds):
+    prices = eds.attributes["today"]
+    hour = dt.now().hour
+    # Get tomorrow if needed:
+    if len(prices) < hour + n and eds.attributes["tomorrow_valid"]:
+        prices = prices + eds.attributes["tomorrow"]
+    
+    # Get forecast prices if available and needed. See instructions to setup Carnot forecast prices https://github.com/MTrab/energidataservice:
+    if len(prices) < hour + n and eds.attributes["forecast"]:
+        _LOGGER.debug(f"use forecast prices")
+        pf = eds.attributes["forecast"]
+        hour_before_now = dt.utcnow() - timedelta(hours=1)
+        for item in pf:
+            if prices or hour_before_now <= datetime.fromisoformat(item["hour"]):
+                prices.append(item["price"])
+                if len(prices) == n:
+                    break
+    return prices[hour: hour + n]
+
 def _get_next_n_hours_from_entsoe(n, e):
     prices = []
     if p := e.attributes.get("prices"):
@@ -95,8 +117,9 @@ def _get_next_n_hours_from_entsoe(n, e):
 class NordpoolDiffSensor(SensorEntity):
     _attr_icon = "mdi:flash"
 
-    def __init__(self, nordpool_entity_id, entsoe_entity_id, filter_length, filter_type, normalize, unit):
+    def __init__(self, nordpool_entity_id, eds_entity_id, entsoe_entity_id, filter_length, filter_type, normalize, unit):
         self._nordpool_entity_id = nordpool_entity_id
+        self._eds_entity_id = eds_entity_id
         self._entsoe_entity_id = entsoe_entity_id
         self._filter_length = filter_length
         if normalize == MAX:
@@ -160,6 +183,15 @@ class NordpoolDiffSensor(SensorEntity):
                 _LOGGER.debug(f"{n} prices from entsoe {prices}")
             except:
                 _LOGGER.exception("_get_next_n_hours_from_entsoe")
+        # Fall back to energidataservice:
+        if (len(prices) < n) and (eds := self.hass.states.get(self._eds_entity_id)):
+            try:
+                eds_prices = _get_next_n_hours_from_eds(n, eds)
+                _LOGGER.debug(f"{n} prices from Energy Data Service {eds_prices}")
+                if len(eds_prices) > len(prices):
+                    prices = eds_prices
+            except:
+                _LOGGER.exception("_get_next_n_hours_from_nordpool")
         # Fall back to nordpool:
         if (len(prices) < n) and (np := self.hass.states.get(self._nordpool_entity_id)):
             try:
